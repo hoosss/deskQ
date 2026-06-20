@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    deskq_tmp_lib::run()
+    deskq_lib::run()
 }

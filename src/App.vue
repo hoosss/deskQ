@@ -1,160 +1,175 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import PetCharacter from "./components/PetCharacter.vue";
+import ChatBubble from "./components/ChatBubble.vue";
+import type { Mood } from "./types";
 
-const greetMsg = ref("");
-const name = ref("");
+/**
+ * 桌宠主界面。
+ * - 透明窗口内显示角色
+ * - 鼠标按下拖拽移动窗口
+ * - 左键单击：开关对话气泡
+ * - 右键：菜单（退出 / 各状态切换）
+ */
 
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
+const mood = ref<Mood>("idle");
+const chatOpen = ref(false);
+const menuOpen = ref(false);
+
+const win = getCurrentWindow();
+
+// ---- 拖拽窗口 ----
+// 在角色上按下鼠标即开始拖拽（Tauri 原生窗口移动）
+async function startDrag() {
+  try {
+    await win.startDragging();
+  } catch (e) {
+    // 非 Tauri 环境（纯浏览器调试）忽略
+    console.warn("startDragging failed:", e);
+  }
 }
+
+// ---- 点击开关对话 ----
+function onPetClick() {
+  chatOpen.value = !chatOpen.value;
+  menuOpen.value = false;
+}
+
+// ---- 右键菜单 ----
+function onContextMenu(e: MouseEvent) {
+  e.preventDefault();
+  menuOpen.value = true;
+}
+
+// ---- 菜单动作 ----
+async function quit() {
+  try {
+    await invoke("quit");
+  } catch {
+    window.close();
+  }
+}
+function setMood(m: Mood) {
+  mood.value = m;
+  menuOpen.value = false;
+}
+
+// ---- 点击空白处关闭菜单 ----
+function onWindowClick() {
+  if (menuOpen.value) menuOpen.value = false;
+}
+
+onMounted(() => {
+  window.addEventListener("click", onWindowClick);
+});
+onUnmounted(() => {
+  window.removeEventListener("click", onWindowClick);
+});
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
+  <div
+    class="app"
+    @contextmenu="onContextMenu"
+  >
+    <!-- 对话气泡 -->
+    <ChatBubble
+      :open="chatOpen"
+      @close="chatOpen = false"
+      @mood-change="(m) => (mood = m)"
+    />
 
-    <div class="row">
-      <a href="https://vite.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
+    <!-- 桌宠角色 -->
+    <div
+      class="app__pet-wrap"
+      @mousedown.left="startDrag"
+      @click="onPetClick"
+    >
+      <PetCharacter :mood="mood" />
     </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
 
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
-  </main>
+    <!-- 右键菜单 -->
+    <div v-if="menuOpen" class="menu" @click.stop>
+      <button class="menu__item" @click="setMood('idle')">🙂 待机</button>
+      <button class="menu__item" @click="setMood('happy')">😄 开心</button>
+      <button class="menu__item" @click="setMood('sleep')">😴 睡觉</button>
+      <button class="menu__item" @click="setMood('think')">🤔 思考</button>
+      <hr class="menu__sep" />
+      <button class="menu__item menu__item--danger" @click="quit">退出 deskQ</button>
+    </div>
+  </div>
 </template>
 
-<style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
-}
-
-</style>
 <style>
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
+/* 全局：透明窗口背景 */
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+</style>
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
+<style scoped>
+.app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
 }
 
-.container {
-  margin: 0;
-  padding-top: 10vh;
+.app__pet-wrap {
+  width: 80%;
+  height: 80%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  /* 允许点击穿透到角色以外的区域，但角色本身可交互 */
+}
+
+.menu {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  border: 1px solid #e5d8a0;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  z-index: 10;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  min-width: 120px;
 }
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
+.menu__item {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 12px;
+  border-radius: 6px;
   cursor: pointer;
+  font-size: 13px;
+  color: #4a3520;
 }
-
-button:hover {
-  border-color: #396cd8;
+.menu__item:hover {
+  background: #fff6dd;
 }
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+.menu__item--danger {
+  color: #d04040;
 }
-
-input,
-button {
-  outline: none;
+.menu__sep {
+  border: none;
+  border-top: 1px solid #f0e8c8;
+  margin: 3px 0;
 }
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
-
 </style>

@@ -8,6 +8,12 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [vue()],
 
+  // 单元测试：jsdom 环境，用于挂载 Vue 组件
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.test.ts"],
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
